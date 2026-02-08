@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIS Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 10px;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .position-input {
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #2a2a2a;
+            border-radius: 5px;
+        }
+        
+        .position-input input {
+            width: 120px;
+            padding: 5px;
+            margin: 0 5px;
+            background: #3a3a3a;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 3px;
+        }
+        
+        .position-input button {
+            padding: 5px 15px;
+            margin-left: 10px;
+            background: #0066cc;
+            border: none;
+            color: #fff;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        .position-input button:hover {
+            background: #0052a3;
+        }
+        
+        .position-input button.clear {
+            background: #cc3300;
+        }
+        
+        .position-input button.clear:hover {
+            background: #a32900;
+        }
+        
+        #map-container {
+            width: 100%;
+            height: 500px;
+            background: #0a0a0a;
+            border: 2px solid #444;
+            margin-bottom: 20px;
+            position: relative;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .info-bar {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            background: #2a2a2a;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        
+        th {
+            background: #3a3a3a;
+            padding: 8px;
+            text-align: left;
+            border-bottom: 2px solid #555;
+            position: sticky;
+            top: 0;
+        }
+        
+        td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #333;
+        }
+        
+        tr:hover {
+            background: #333;
+        }
+        
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 16px;
+        }
+        
+        /* Diagnostics Panel */
+        .diagnostics {
+            background: #2a2a2a;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            border-top: 2px solid #444;
+        }
+        
+        .diagnostics h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .diag-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+        }
+        
+        .diag-item {
+            background: #333;
+            padding: 10px;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+        }
+        
+        .diag-status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        
+        .diag-status.ok { background: #00ff00; }
+        .diag-status.warning { background: #ffaa00; }
+        .diag-status.error { background: #ff0000; }
+        
+        .diag-label {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        
+        .diag-value {
+            color: #aaa;
+        }
+        
+        .errors-list {
+            margin-top: 10px;
+            font-size: 11px;
+            color: #ff6666;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        
+        @media (max-width: 768px) {
+            table {
+                font-size: 11px;
+            }
+            th, td {
+                padding: 4px;
+            }
+            .position-input input {
+                width: 100px;
+            }
+            .diag-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>AIS Tracker</h1>
+    
+    <div class="position-input">
+        <label>My Position:</label>
+        <input type="number" id="myLat" placeholder="Latitude" step="0.000001">
+        <input type="number" id="myLon" placeholder="Longitude" step="0.000001">
+        <button onclick="setMyPosition()">Set</button>
+        <button class="clear" onclick="clearMyPosition()">Clear</button>
+    </div>
+    
+    <div class="info-bar">
+        <span id="vessel-count">Loading...</span> | 
+        <span id="last-update">Waiting for data...</span>
+    </div>
+    
+    <div id="map-container">
+        <canvas id="map"></canvas>
+    </div>
+    
+    <div class="table-container">
+        <table id="vessel-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Position</th>
+                    <th>Speed</th>
+                    <th>Course</th>
+                    <th>MMSI</th>
+                    <th>Timestamp</th>
+                    <th>Type</th>
+                    <th>Distance</th>
+                    <th>Bearing</th>
+                    <th>Callsign</th>
+                    <th>Destination</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="vessel-data">
+                <tr><td colspan="12" class="no-data">Waiting for vessel data...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Diagnostics Panel -->
+    <div class="diagnostics">
+        <h3>System Status</h3>
+        <div class="diag-grid" id="diag-grid">
+            <div class="diag-item">
+                <div class="diag-status ok" id="status-rtl"></div>
+                <span class="diag-label">RTL-SDR:</span>
+                <span class="diag-value" id="val-rtl">Checking...</span>
+            </div>
+            <div class="diag-item">
+                <div class="diag-status ok" id="status-ais"></div>
+                <span class="diag-label">AIS Capture:</span>
+                <span class="diag-value" id="val-ais">Checking...</span>
+            </div>
+            <div class="diag-item">
+                <div class="diag-status ok" id="status-msg"></div>
+                <span class="diag-label">Last Message:</span>
+                <span class="diag-value" id="val-msg">Checking...</span>
+            </div>
+            <div class="diag-item">
+                <div class="diag-status ok" id="status-db"></div>
+                <span class="diag-label">Database:</span>
+                <span class="diag-value" id="val-db">Checking...</span>
+            </div>
+        </div>
+        <div class="errors-list" id="errors-list"></div>
+    </div>
+    
+    <script>
+        let vessels = [];
+        let myPosition = null;
+        let canvas, ctx;
+        
+        window.onload = function() {
+            canvas = document.getElementById('map');
+            ctx = canvas.getContext('2d');
+            
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            
+            const saved = localStorage.getItem('myPosition');
+            if (saved) {
+                myPosition = JSON.parse(saved);
+                document.getElementById('myLat').value = myPosition.lat;
+                document.getElementById('myLon').value = myPosition.lon;
+            }
+            
+            fetchVessels();
+            fetchDiagnostics();
+            setInterval(fetchVessels, 10000);
+            setInterval(fetchDiagnostics, 5000);
+        };
+        
+        function setMyPosition() {
+            const lat = parseFloat(document.getElementById('myLat').value);
+            const lon = parseFloat(document.getElementById('myLon').value);
+            
+            if (isNaN(lat) || isNaN(lon)) {
+                alert('Please enter valid coordinates');
+                return;
+            }
+            
+            myPosition = { lat, lon };
+            localStorage.setItem('myPosition', JSON.stringify(myPosition));
+            fetchVessels();
+        }
+        
+        function clearMyPosition() {
+            myPosition = null;
+            document.getElementById('myLat').value = '';
+            document.getElementById('myLon').value = '';
+            localStorage.removeItem('myPosition');
+            fetchVessels();
+        }
+        
+        function fetchVessels() {
+            let url = '/api/vessels';
+            if (myPosition) {
+                url += `?my_lat=${myPosition.lat}&my_lon=${myPosition.lon}`;
+            }
+            
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    vessels = data;
+                    updateMap();
+                    updateTable();
+                    
+                    document.getElementById('vessel-count').textContent = 
+                        `${vessels.length} vessel${vessels.length !== 1 ? 's' : ''}`;
+                    document.getElementById('last-update').textContent = 
+                        `Updated: ${new Date().toLocaleTimeString()}`;
+                })
+                .catch(err => {
+                    console.error('Error fetching vessels:', err);
+                });
+        }
+        
+        function fetchDiagnostics() {
+            fetch('/api/diagnostics')
+                .then(r => r.json())
+                .then(data => {
+                    // RTL-SDR Status
+                    const rtlStatus = document.getElementById('status-rtl');
+                    const rtlVal = document.getElementById('val-rtl');
+                    if (data.rtl_sdr_connected) {
+                        rtlStatus.className = 'diag-status ok';
+                        rtlVal.textContent = 'Connected';
+                    } else {
+                        rtlStatus.className = 'diag-status error';
+                        rtlVal.textContent = 'Not detected';
+                    }
+                    
+                    // AIS Capture Status
+                    const aisStatus = document.getElementById('status-ais');
+                    const aisVal = document.getElementById('val-ais');
+                    const aisStatusText = data.ais_catcher_status || 'Unknown';
+                    if (aisStatusText.includes('ERROR')) {
+                        aisStatus.className = 'diag-status error';
+                    } else if (aisStatusText === 'Running') {
+                        aisStatus.className = 'diag-status ok';
+                    } else {
+                        aisStatus.className = 'diag-status warning';
+                    }
+                    aisVal.textContent = aisStatusText;
+                    
+                    // Last Message Status
+                    const msgStatus = document.getElementById('status-msg');
+                    const msgVal = document.getElementById('val-msg');
+                    const secSince = data.seconds_since_message || 999999;
+                    if (secSince < 60) {
+                        msgStatus.className = 'diag-status ok';
+                        msgVal.textContent = `${secSince}s ago`;
+                    } else if (secSince < 300) {
+                        msgStatus.className = 'diag-status warning';
+                        msgVal.textContent = `${Math.floor(secSince/60)}m ago`;
+                    } else {
+                        msgStatus.className = 'diag-status error';
+                        msgVal.textContent = data.last_message === 'Never' ? 'Never' : 'No recent data';
+                    }
+                    
+                    // Database Status
+                    const dbStatus = document.getElementById('status-db');
+                    const dbVal = document.getElementById('val-db');
+                    dbStatus.className = 'diag-status ok';
+                    dbVal.textContent = `${data.vessel_count} vessels, ${data.db_size_mb} MB`;
+                    
+                    // Errors
+                    const errorsList = document.getElementById('errors-list');
+                    if (data.recent_errors && data.recent_errors.length > 0) {
+                        errorsList.innerHTML = '<strong>Recent Errors:</strong><br>' + 
+                            data.recent_errors.join('<br>');
+                    } else {
+                        errorsList.innerHTML = '';
+                    }
+                })
+                .catch(err => {
+                    console.error('Error fetching diagnostics:', err);
+                });
+        }
+        
+        function updateMap() {
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            if (vessels.length === 0 && !myPosition) {
+                ctx.fillStyle = '#666';
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('No vessels detected', canvas.width/2, canvas.height/2);
+                return;
+            }
+            
+            let minLat = Infinity, maxLat = -Infinity;
+            let minLon = Infinity, maxLon = -Infinity;
+            
+            vessels.forEach(v => {
+                if (v.latitude < minLat) minLat = v.latitude;
+                if (v.latitude > maxLat) maxLat = v.latitude;
+                if (v.longitude < minLon) minLon = v.longitude;
+                if (v.longitude > maxLon) maxLon = v.longitude;
+            });
+            
+            if (myPosition) {
+                if (myPosition.lat < minLat) minLat = myPosition.lat;
+                if (myPosition.lat > maxLat) maxLat = myPosition.lat;
+                if (myPosition.lon < minLon) minLon = myPosition.lon;
+                if (myPosition.lon > maxLon) maxLon = myPosition.lon;
+            }
+            
+            const latPad = (maxLat - minLat) * 0.1 || 0.01;
+            const lonPad = (maxLon - minLon) * 0.1 || 0.01;
+            minLat -= latPad; maxLat += latPad;
+            minLon -= lonPad; maxLon += lonPad;
+            
+            const scaleX = canvas.width / (maxLon - minLon);
+            const scaleY = canvas.height / (maxLat - minLat);
+            
+            function toX(lon) {
+                return (lon - minLon) * scaleX;
+            }
+            
+            function toY(lat) {
+                return canvas.height - (lat - minLat) * scaleY;
+            }
+            
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 10; i++) {
+                const x = i * canvas.width / 10;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+                
+                const y = i * canvas.height / 10;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            
+            if (myPosition) {
+                const x = toX(myPosition.lon);
+                const y = toY(myPosition.lat);
+                
+                ctx.fillStyle = '#00ff00';
+                ctx.beginPath();
+                ctx.arc(x, y, 8, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                ctx.fillStyle = '#00ff00';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('YOU', x, y - 12);
+            }
+            
+            vessels.forEach(v => {
+                const x = toX(v.longitude);
+                const y = toY(v.latitude);
+                
+                ctx.fillStyle = '#ff6600';
+                ctx.beginPath();
+                ctx.arc(x, y, 6, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                if (v.heading !== null && v.heading !== 511) {
+                    const heading = v.heading * Math.PI / 180;
+                    const len = 15;
+                    
+                    ctx.strokeStyle = '#ff6600';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + len * Math.sin(heading), y - len * Math.cos(heading));
+                    ctx.stroke();
+                } else if (v.course !== null) {
+                    const course = v.course * Math.PI / 180;
+                    const len = 15;
+                    
+                    ctx.strokeStyle = '#ff6600';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + len * Math.sin(course), y - len * Math.cos(course));
+                    ctx.stroke();
+                }
+                
+                if (v.speed !== null) {
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '10px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${v.speed.toFixed(1)} kts`, x, y + 18);
+                    ctx.fillText(v.mmsi, x, y + 30);
+                }
+            });
+        }
+        
+        function updateTable() {
+            const tbody = document.getElementById('vessel-data');
+            
+            if (vessels.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="12" class="no-data">No vessels detected</td></tr>';
+                return;
+            }
+            
+            let html = '';
+            vessels.forEach(v => {
+                const timestamp = new Date(v.timestamp).toLocaleString();
+                const position = `${v.latitude.toFixed(5)}, ${v.longitude.toFixed(5)}`;
+                const speed = v.speed !== null ? v.speed.toFixed(1) : '-';
+                const course = v.course !== null ? v.course.toFixed(0) + '°' : '-';
+                const distance = v.distance !== undefined ? v.distance.toFixed(2) + ' NM' : '-';
+                const bearing = v.bearing !== undefined ? v.bearing.toFixed(0) + '°' : '-';
+                
+                html += `
+                    <tr>
+                        <td>${v.name}</td>
+                        <td>${position}</td>
+                        <td>${speed}</td>
+                        <td>${course}</td>
+                        <td>${v.mmsi}</td>
+                        <td>${timestamp}</td>
+                        <td>${v.vessel_type}</td>
+                        <td>${distance}</td>
+                        <td>${bearing}</td>
+                        <td>${v.callsign}</td>
+                        <td>${v.destination}</td>
+                        <td>${v.nav_status}</td>
+                    </tr>
+                `;
+            });
+            
+            tbody.innerHTML = html;
+        }
+        
+        window.addEventListener('resize', function() {
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            updateMap();
+        });
+    </script>
+</body>
+</html>
